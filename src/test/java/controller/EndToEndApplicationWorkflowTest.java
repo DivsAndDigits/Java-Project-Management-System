@@ -1,6 +1,5 @@
 package controller;
 
-import exception.UnauthorizedAccessException;
 import filter.AuthenticationFilter;
 import model.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,12 +32,9 @@ class EndToEndApplicationWorkflowTest {
     private ServiceFactory factory;
     private LoginServlet loginServlet;
     private DashboardServlet dashboardServlet;
-    private ProjectServlet projectServlet;
     private ProjectDetailsServlet projectDetailsServlet;
-    private TaskServlet taskServlet;
     private TeamServlet teamServlet;
     private NotificationServlet notificationServlet;
-    private ProfileServlet profileServlet;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -47,12 +43,9 @@ class EndToEndApplicationWorkflowTest {
 
         loginServlet = new LoginServlet(factory.getUserService());
         dashboardServlet = new DashboardServlet(factory.getDashboardService(), factory.getProjectService(), factory.getUserService());
-        projectServlet = new ProjectServlet(factory.getProjectService(), factory.getUserService());
         projectDetailsServlet = new ProjectDetailsServlet(factory.getProjectService(), factory.getTaskService(), factory.getUserService());
-        taskServlet = new TaskServlet(factory.getTaskService(), factory.getProjectService(), factory.getUserService());
         teamServlet = new TeamServlet(factory.getUserService());
         notificationServlet = new NotificationServlet(factory.getNotificationService(), factory.getUserService());
-        profileServlet = new ProfileServlet(factory.getUserService(), factory.getProjectService(), factory.getTaskService());
 
         // Clean up test projects from previous runs to ensure clean idempotency
         factory.getProjectService().getAllProjects().stream()
@@ -222,7 +215,7 @@ class EndToEndApplicationWorkflowTest {
         Long pid = savedProject.getId();
         assertEquals(0, factory.getProjectService().getProjectById(pid).getProgressPercentage(), "0 tasks -> 0% progress");
 
-        // 2. Add Task 1 (TODO) -> 1 task, 0 completed -> 0%
+        // 2. Add Task 1 (To-do) -> 1 task, 0 completed -> 0%
         Task task1 = new Task();
         task1.setTitle("Task 1");
         task1.setProjectId(pid);
@@ -235,7 +228,7 @@ class EndToEndApplicationWorkflowTest {
         assertEquals(0, pAfterTask1.getCompletedTasks());
         assertEquals(0, pAfterTask1.getProgressPercentage(), "1 task (0 done) -> 0% progress");
 
-        // 3. Add Task 2 (TODO) -> 2 tasks, 0 completed -> 0%
+        // 3. Add Task 2 (To-do) -> 2 tasks, 0 completed -> 0%
         Task task2 = new Task();
         task2.setTitle("Task 2");
         task2.setProjectId(pid);
@@ -272,7 +265,7 @@ class EndToEndApplicationWorkflowTest {
         assertEquals(1, pAfterTaskDelete.getCompletedTasks());
         assertEquals(100, pAfterTaskDelete.getProgressPercentage(), "1 of 1 completed -> 100% progress");
 
-        // 7. Add Task 3 (TODO) -> 2 tasks, 1 completed -> 50%
+        // 7. Add Task 3 (To-do) -> 2 tasks, 1 completed -> 50%
         Task task3 = new Task();
         task3.setTitle("Task 3");
         task3.setProjectId(pid);
@@ -291,7 +284,7 @@ class EndToEndApplicationWorkflowTest {
     void testStep7_DynamicOverdueTaskLogic() {
         User reporter = factory.getUserService().getUserById(1L);
 
-        // Task with past due date and TODO status -> OVERDUE
+        // Task with past due date and To-do status -> OVERDUE
         Task overdueTask = new Task();
         overdueTask.setTitle("Legacy Migration");
         overdueTask.setProjectId(1L);
@@ -300,7 +293,7 @@ class EndToEndApplicationWorkflowTest {
         overdueTask.setReporter(reporter);
         Task savedOverdue = factory.getTaskService().createTask(overdueTask);
 
-        assertTrue(savedOverdue.isOverdue(), "Past due date with TODO status must be overdue");
+        assertTrue(savedOverdue.isOverdue(), "Past due date with To-do status must be overdue");
 
         // Mark as COMPLETED -> no longer overdue
         factory.getTaskService().updateTaskStatus(savedOverdue.getId(), TaskStatus.COMPLETED);
@@ -376,8 +369,14 @@ class EndToEndApplicationWorkflowTest {
         MockServletSupport.TestResponse teamResp = new MockServletSupport.TestResponse();
         teamServlet.doGet(teamReq.asProxy(), teamResp.asProxy());
 
-        List<TeamMemberSummary> summaries = (List<TeamMemberSummary>) teamReq.attributes.get("teamSummaries");
-        assertNotNull(summaries, "Team summaries must be populated");
+        Object summariesValue = teamReq.attributes.get("teamSummaries");
+        assertInstanceOf(List.class, summariesValue, "Team summaries must be a list");
+        List<?> rawSummaries = (List<?>) summariesValue;
+        assertTrue(rawSummaries.stream().allMatch(TeamMemberSummary.class::isInstance),
+                "Every team summary must have the expected type");
+        List<TeamMemberSummary> summaries = rawSummaries.stream()
+                .map(TeamMemberSummary.class::cast)
+                .toList();
         assertFalse(summaries.isEmpty(), "Team members directory must not be empty");
 
         // 2. Notification Center
@@ -389,9 +388,19 @@ class EndToEndApplicationWorkflowTest {
 
         notificationServlet.doGet(notifReq.asProxy(), notifResp.asProxy());
 
-        List<Notification> notifs = (List<Notification>) notifReq.attributes.get("notifications");
-        assertNotNull(notifs, "User notifications list must be present");
-        assertEquals("/WEB-INF/views/notifications.jsp", notifReq.forwardPath);
+ Object notificationsValue = notifReq.attributes.get("notifications");
+
+assertInstanceOf(List.class, notificationsValue,
+        "User notifications must be a list");
+
+List<?> rawNotifications = (List<?>) notificationsValue;
+
+assertTrue(
+        rawNotifications.stream().allMatch(Notification.class::isInstance),
+        "Every notification must have the expected type"
+);
+
+assertEquals("/WEB-INF/views/notifications.jsp", notifReq.forwardPath);
 
         // 3. Mark all read
         MockServletSupport.TestRequest markAllReq = new MockServletSupport.TestRequest("/notifications");

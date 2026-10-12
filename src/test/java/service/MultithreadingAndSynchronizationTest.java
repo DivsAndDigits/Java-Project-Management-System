@@ -29,7 +29,6 @@ public class MultithreadingAndSynchronizationTest {
     private NotificationDao notificationDao;
 
     private NotificationService notificationService;
-    private TaskService taskService;
     private ProjectService projectService;
 
     private NotificationCoordinator coordinator;
@@ -43,7 +42,6 @@ public class MultithreadingAndSynchronizationTest {
         notificationDao = new InMemoryNotificationDao();
 
         notificationService = new NotificationServiceImpl(notificationDao);
-        taskService = new TaskServiceImpl(taskDao, projectDao);
         projectService = new ProjectServiceImpl(projectDao);
 
         coordinator = new NotificationCoordinator(notificationService);
@@ -296,7 +294,9 @@ public class MultithreadingAndSynchronizationTest {
                     } else {
                         // Iterating during concurrent writes must not throw ConcurrentModificationException
                         int count = 0;
-                        for (User u : project.getTeamMembers()) {
+                        for (java.util.Iterator<User> iterator = project.getTeamMembers().iterator();
+                             iterator.hasNext(); ) {
+                            iterator.next();
                             count++;
                         }
                         assertTrue(count > 0);
